@@ -1,0 +1,124 @@
+USER root
+RUN apt-key del 7fa2af80
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub
+RUN apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu2004/x86_64/7fa2af80.pub
+
+# Install necessary packages for adding a new repository
+RUN apt-get update && apt-get install -y gnupg2 curl
+
+# Add NVIDIA package repositories for CUDA 12.1
+RUN curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub | apt-key add - && \
+    echo "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /" > /etc/apt/sources.list.d/cuda.list && \
+    echo "deb https://developer.download.nvidia.com/compute/machine-learning/repos/ubuntu2004/x86_64/ /" > /etc/apt/sources.list.d/nvidia-ml.list
+ARG DEBIAN_FRONTEND=noninteractive
+#######################################################
+#         Install CUDA and GPU dependencies           #
+#######################################################
+# Based off https://gitlab.com/nvidia/container-images/cuda/-/tree/master/dist/11.7.0/ubuntu2004
+
+# Install CUDA Base
+ENV NVARCH x86_64
+
+ENV NVIDIA_REQUIRE_CUDA "cuda>=12.1 brand=tesla,driver>=450,driver<451 brand=tesla,driver>=470,driver<471 brand=unknown,driver>=470,driver<471 brand=nvidia,driver>=470,driver<471 brand=nvidiartx,driver>=470,driver<471 brand=geforce,driver>=470,driver<471 brand=geforcertx,driver>=470,driver<471 brand=quadro,driver>=470,driver<471 brand=quadrortx,driver>=470,driver<471 brand=titan,driver>=470,driver<471 brand=titanrtx,driver>=470,driver<471 brand=tesla,driver>=510,driver<511 brand=unknown,driver>=510,driver<511 brand=nvidia,driver>=510,driver<511 brand=nvidiartx,driver>=510,driver<511 brand=quadro,driver>=510,driver<511 brand=quadrortx,driver>=510,driver<511 brand=titan,driver>=510,driver<511 brand=titanrtx,driver>=510,driver<511 brand=geforce,driver>=510,driver<511 brand=geforcertx,driver>=510,driver<511"
+ENV NV_CUDA_CUDART_VERSION 12.1.55-1
+ENV NV_CUDA_COMPAT_PACKAGE cuda-compat-12.1
+
+ENV CUDA_VERSION 12.1.0
+
+# For libraries in the cuda-compat-* package: https://docs.nvidia.com/cuda/eula/index.html#attachment-a
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cuda-cudart-12-1=${NV_CUDA_CUDART_VERSION} \
+    ${NV_CUDA_COMPAT_PACKAGE} \
+    && rm -rf /var/lib/apt/lists/*
+
+# Required for nvidia-docker v1
+RUN echo "/usr/local/nvidia/lib" >> /etc/ld.so.conf.d/nvidia.conf \
+    && echo "/usr/local/nvidia/lib64" >> /etc/ld.so.conf.d/nvidia.conf
+
+ENV PATH /usr/local/nvidia/bin:/usr/local/cuda/bin:${PATH}
+ENV LD_LIBRARY_PATH /usr/local/nvidia/lib:/usr/local/nvidia/lib64
+
+
+# nvidia-container-runtime
+ENV NVIDIA_VISIBLE_DEVICES all
+ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
+
+# Install CUDA Runtime
+ENV NV_CUDA_LIB_VERSION 12.1.0-1
+ENV NV_NVTX_VERSION 12.1.66-1
+ENV NV_LIBNPP_VERSION 12.0.2.50-1
+ENV NV_LIBNPP_PACKAGE libnpp-12-1=${NV_LIBNPP_VERSION}
+ENV NV_LIBCUSPARSE_VERSION 12.0.2.55-1
+
+ENV NV_LIBCUBLAS_PACKAGE_NAME libcublas-12-1
+ENV NV_LIBCUBLAS_VERSION 12.1.0.26-1
+ENV NV_LIBCUBLAS_PACKAGE ${NV_LIBCUBLAS_PACKAGE_NAME}=${NV_LIBCUBLAS_VERSION}
+
+ENV NV_LIBNCCL_PACKAGE_NAME libnccl2
+ENV NV_LIBNCCL_PACKAGE_VERSION 2.17.1-1
+ENV NCCL_VERSION 2.17.1
+ENV NV_LIBNCCL_PACKAGE ${NV_LIBNCCL_PACKAGE_NAME}=${NV_LIBNCCL_PACKAGE_VERSION}+cuda12.1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    cuda-libraries-12-1=${NV_CUDA_LIB_VERSION} \
+    ${NV_LIBNPP_PACKAGE} \
+    cuda-nvtx-12-1=${NV_NVTX_VERSION} \
+    libcusparse-dev-12-1=${NV_LIBCUSPARSE_VERSION} \
+    ${NV_LIBCUBLAS_PACKAGE} \
+    ${NV_LIBNCCL_PACKAGE} \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt update && \
+    apt install -y cuda-toolkit-12-1
+
+# Keep apt from auto upgrading the cublas and nccl packages. See https://gitlab.com/nvidia/container-images/cuda/-/issues/88
+RUN apt-mark hold ${NV_LIBCUBLAS_PACKAGE_NAME} ${NV_LIBNCCL_PACKAGE_NAME}
+
+# RUN conda install -y nvidia/label/cuda-12.1.0::cuda nvidia
+
+# Add your other installations (Python packages, Jupyter, etc.)
+
+# Install PyTorch, torchvision, and torchaudio with specific CUDA support
+RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# Uninstall and reinstall specific versions of protobuf, mlflow, and other packages
+RUN pip uninstall -y protobuf apex transformer-engine && \
+	pip install --no-cache-dir \
+    accelerate==0.23.0 \
+    bitsandbytes==0.41.1 \
+    datasets==2.14.5 \
+    domino-data-capture==0.1.2 \
+    dominodatalab==1.2.4 \
+    dominodatalab-data==5.8.0 \
+    einops==0.6.1 \
+    huggingface-hub==0.16.4 \
+	  ipywidgets \
+    jsonify \
+    langchain==0.0.303 \
+    'markdown-it-py<3.0.0,>=1.0.0' \
+    matplotlib==3.6.2 \
+    mlflow==2.9.2 \
+    numpy==1.22.2 \
+	  nvidia-dali-cuda120 \
+    openai \
+    pandas==1.5.2 \
+    peft==0.5.0 \
+	  protobuf==3.20.3 \
+    py7zr==0.20.6 \
+    python-dotenv==1.0.0 \
+    scikit-learn \
+    scipy \
+    sentence-transformers==2.2.2 \
+    streamlit==1.27.0 \
+    tiktoken==0.5.1 \
+    torchtext \
+	  transformers \
+    triton==2.1.0 \
+    trl==0.7.1 \
+    xformers==0.0.12 \
+    jsonschema==4.17.3 \
+    cryptography==39.0.1 \
+    PyYAML==5.4 \
+    attrs==20.1.0
+
+USER ubuntu

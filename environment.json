@@ -1,0 +1,6 @@
+{
+  "title": "Ecosystem Template Project Hub Gpu Environment",
+  "id": "Ecosystem Template Project Hub Gpu Environment",
+  "environmentBaseImage": "quay.io/domino/compute-environment-images:ubuntu20-py3.9-domino5.9-minimal",
+  "description": "This environment can be used as a base environment for developing LLM applications."
+}
